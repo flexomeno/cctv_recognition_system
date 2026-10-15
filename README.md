@@ -27,7 +27,7 @@ pip install -r requirements.txt
 cp config.example.yaml config.yaml
 ```
 
-Edita `config.yaml` con las URLs reales. Ese archivo no se versiona porque lleva usuario y clave. El primer arranque descarga YOLOv8n (pesos de Ultralytics, licencia AGPL-3.0) en `models/yolov8n.onnx` y lo ejecuta a 320 px.
+Edita `config.yaml` con las URLs reales. Ese archivo no se versiona porque lleva usuario y clave. El primer arranque descarga YOLOv8n (pesos de Ultralytics, licencia AGPL-3.0) en `models/yolov8n.onnx` y lo ejecuta a 640 px.
 
 ## Uso
 
@@ -72,12 +72,12 @@ sudo k3s kubectl -n cctv rollout restart deployment/cctv-monitor
 
 Clases: persona, bicicleta, auto, moto, bus y camión.
 
-Una visita se confirma cuando el mismo objeto aparece en al menos dos análisis seguidos. Si se pierde menos de 2 segundos, sigue siendo la misma. Al cerrarse se guarda cámara, clase, inicio, fin, confianza y la ruta del clip.
+Una visita se confirma en la primera detección. Si el mismo objeto se pierde menos de 2 segundos, sigue siendo la misma visita. Al cerrarse se guarda cámara, clase, inicio, fin, confianza y la ruta del clip.
 
 El clip dura 10 segundos: unos 3 segundos previos a la confirmación y el resto hasta completar los 10. Si en esa ventana entran más visitas de la misma cámara, comparten el clip.
 
 ## Límites
 
-- Con 10 cámaras la detección va por turnos. Un cruce muy rápido puede no alcanzar los dos frames de confirmación.
+- Con 10 cámaras la detección va por turnos. Un cruce que no coincide con el turno de esa cámara puede no quedar en ningún frame.
 - Si la cámara se configura en main stream, el CPU se queda decodificando y deja de analizar a tiempo.
 - No hay reconocimiento facial ni lectura de placas.

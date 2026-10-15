@@ -98,7 +98,7 @@ def load_config(path: Path) -> AppConfig:
     if fps <= 0 or buffer_fps <= 0:
         raise ValueError("Los FPS tienen que ser mayores que 0.")
 
-    min_hits = _int(tracking, "min_hits", 2)
+    min_hits = _int(tracking, "min_hits", 1)
     max_lost_s = _float(tracking, "max_lost_s", 2)
     if min_hits < 1:
         raise ValueError("tracking.min_hits tiene que ser al menos 1.")

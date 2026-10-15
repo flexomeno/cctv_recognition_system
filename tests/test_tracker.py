@@ -16,6 +16,13 @@ def tracker():
 
 
 class TrackerTest(unittest.TestCase):
+    def test_confirms_on_the_first_sighting(self):
+        follow = CameraTracker(TrackingConfig(iou_threshold=0.3, max_lost_s=2, min_hits=1))
+        events = follow.update([Det("auto", 0.8, (0, 0, 10, 10))], 0)
+        self.assertEqual([event.kind for event in events], ["confirmed"])
+        self.assertEqual(events[0].track.track_id, 1)
+        self.assertEqual(follow.update([Det("auto", 0.9, (0, 0, 10, 10))], 0.5), [])
+
     def test_confirms_on_second_hit_and_counts_once(self):
         follow = tracker()
         box = (0, 0, 10, 10)

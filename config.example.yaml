@@ -3,11 +3,11 @@
 output_dir: data
 database: data/inventory.db
 model_path: models/yolov8n.onnx
-# ONNX dinámico de YOLOv8n (COCO). La entrada queda en imgsz, 320 en este NUC.
+# ONNX dinámico de YOLOv8n (COCO). La entrada queda en imgsz.
 model_url: https://huggingface.co/unileon-robotics/YOLO8-ONNX/resolve/main/dynamic/yolov8n.onnx
 
 inference:
-  imgsz: 320
+  imgsz: 640
   confidence: 0.40
   iou: 0.45
   # Máximo de análisis por cámara. Con varias cámaras el CPU hace una sola inferencia a la vez.
@@ -21,7 +21,7 @@ clip:
 tracking:
   iou_threshold: 0.30
   max_lost_s: 2
-  min_hits: 2
+  min_hits: 1
 
 summary_interval_s: 60
 

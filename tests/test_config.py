@@ -20,7 +20,7 @@ class ConfigTest(unittest.TestCase):
         config = load_config(EXAMPLE)
         self.assertEqual(len(config.cameras), 1)
         self.assertEqual(config.cameras[0].id, "cam01")
-        self.assertEqual(config.inference.imgsz, 320)
+        self.assertEqual(config.inference.imgsz, 640)
         self.assertEqual(config.clip.duration_s, 10)
         self.assertEqual(config.clip.preroll_s, 3)
         self.assertTrue(str(config.database).endswith("inventory.db"))
