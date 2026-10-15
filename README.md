@@ -48,28 +48,24 @@ python -m app.report --config config.yaml --desde 2026-10-01
 
 ## Kubernetes en el NUC
 
-Un solo pod. El inventario y los clips viven en un volumen de 20 GB. Las claves van en un Secret armado desde `config.yaml`, no dentro de la imagen. El pod usa como máximo un núcleo y medio y 2 GB, para dejar sitio al resto del clúster.
+Todo queda en el namespace `cctv`. No usa el namespace `energy-monitoring` ni el volumen `video-capture-storage`. Un solo pod, volumen propio de 20 GB en `local-path`, y un tope de 1 CPU y 1,5 GB para dejar el otro núcleo a Grafana, InfluxDB, Mosquitto y Telegraf. Las claves van en un Secret armado desde `config.yaml`, no dentro de la imagen. En este NUC el `kubectl` del usuario no autentica; el script usa `sudo k3s kubectl`.
 
-En el NUC, con Docker y `kubectl` apuntando al clúster:
+El repositorio es público y `config.yaml` no se sube. En el NUC, después del pull, copia ese archivo al clon y construye ahí. Hace falta Docker o nerdctl, y k3s:
 
 ```bash
+git clone https://github.com/flexomeno/cctv_recognition_system.git
+cd cctv_recognition_system
+# config.yaml se copia desde la Mac; no está en GitHub
 sh deploy/install.sh
-kubectl -n cctv logs -f deployment/cctv-monitor
-```
-
-Si la imagen se construye en esta Mac, hay que meterla en k3s del NUC antes de aplicar:
-
-```bash
-docker build --platform linux/amd64 -t cctv-recognition:local .
-docker save cctv-recognition:local | ssh <nuc> 'sudo k3s ctr images import -'
+sudo k3s kubectl -n cctv logs -f deployment/cctv-monitor
 ```
 
 El primer arranque descarga el modelo YOLO, así que el pod necesita salida a internet esa vez. Las cámaras están en `192.168.110.0/24`; el pod tiene que poder llegar a esa red. Si al reiniciar no hay imagen, revisa esa ruta. Para cambiar cámaras o el token de Telegram, vuelve a crear el Secret y reinicia el deployment:
 
 ```bash
-kubectl -n cctv create secret generic cctv-config \
-  --from-file=config.yaml=config.yaml --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n cctv rollout restart deployment/cctv-monitor
+sudo k3s kubectl -n cctv create secret generic cctv-config \
+  --from-file=config.yaml=config.yaml --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+sudo k3s kubectl -n cctv rollout restart deployment/cctv-monitor
 ```
 
 ## Qué cuenta

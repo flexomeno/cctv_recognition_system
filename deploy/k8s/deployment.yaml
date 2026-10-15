@@ -28,11 +28,11 @@ spec:
             allowPrivilegeEscalation: false
           resources:
             requests:
-              cpu: 250m
+              cpu: 200m
               memory: 512Mi
             limits:
-              cpu: "1500m"
-              memory: 2Gi
+              cpu: "1"
+              memory: 1536Mi
           volumeMounts:
             - name: config
               mountPath: /app/config.yaml

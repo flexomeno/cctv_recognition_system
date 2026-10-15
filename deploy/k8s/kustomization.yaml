@@ -3,5 +3,6 @@ kind: Kustomization
 namespace: cctv
 resources:
   - namespace.yaml
+  - quota.yaml
   - pvc.yaml
   - deployment.yaml

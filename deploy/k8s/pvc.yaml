@@ -4,6 +4,7 @@ metadata:
   name: cctv-data
   namespace: cctv
 spec:
+  storageClassName: local-path
   accessModes:
     - ReadWriteOnce
   resources:
