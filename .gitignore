@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.py[cod]
+config.yaml
+data/
+models/*.onnx
+models/*.part
+*.part
+.DS_Store

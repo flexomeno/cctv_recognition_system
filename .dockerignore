@@ -1,0 +1,11 @@
+.venv
+.git
+.cursor
+data
+models
+tests
+__pycache__
+*.pyc
+config.yaml
+*.md
+.DS_Store

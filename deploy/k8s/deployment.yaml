@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cctv-monitor
+  namespace: cctv
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: cctv-monitor
+  template:
+    metadata:
+      labels:
+        app: cctv-monitor
+    spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: monitor
+          image: cctv-recognition:local
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1500m"
+              memory: 2Gi
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: data
+              mountPath: /var/cctv
+      volumes:
+        - name: config
+          secret:
+            secretName: cctv-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: cctv-data

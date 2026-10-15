@@ -1,0 +1,38 @@
+# Copia este archivo a config.yaml. No subas config.yaml: lleva las claves del RTSP.
+
+output_dir: data
+database: data/inventory.db
+model_path: models/yolov8n.onnx
+# ONNX dinámico de YOLOv8n (COCO). La entrada queda en imgsz, 320 en este NUC.
+model_url: https://huggingface.co/unileon-robotics/YOLO8-ONNX/resolve/main/dynamic/yolov8n.onnx
+
+inference:
+  imgsz: 320
+  confidence: 0.40
+  iou: 0.45
+  # Máximo de análisis por cámara. Con varias cámaras el CPU hace una sola inferencia a la vez.
+  fps_per_camera: 2
+
+clip:
+  duration_s: 10
+  preroll_s: 3
+  buffer_fps: 5
+
+tracking:
+  iou_threshold: 0.30
+  max_lost_s: 2
+  min_hits: 2
+
+summary_interval_s: 60
+
+# Cada clip de 10 s se envía a este chat. Crea el bot con @BotFather y escribe /start al bot.
+telegram:
+  bot_token: ""
+  chat_id: ""
+
+# Hasta 10 cámaras. Usa el substream (cerca de 640x360), no el main stream.
+cameras:
+  - id: cam01
+    url: rtsp://usuario:clave@192.168.1.101:554/stream2
+  # - id: cam02
+  #   url: rtsp://usuario:clave@192.168.1.102:554/stream2
