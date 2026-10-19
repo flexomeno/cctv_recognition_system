@@ -2,26 +2,21 @@
 
 output_dir: data
 database: data/inventory.db
-model_path: models/yolov8n.onnx
-# ONNX dinámico de YOLOv8n (COCO). La entrada queda en imgsz.
-model_url: https://huggingface.co/unileon-robotics/YOLO8-ONNX/resolve/main/dynamic/yolov8n.onnx
 
-inference:
-  imgsz: 640
-  confidence: 0.40
-  iou: 0.45
-  # Máximo de análisis por cámara. Con varias cámaras el CPU hace una sola inferencia a la vez.
-  fps_per_camera: 2
+# Exterior: el viento mueve puntos sueltos. El clip sale cuando un bloque compacto
+# cambia durante varios frames. Bajar diff_threshold o min_area_ratio lo hace más sensible.
+motion:
+  diff_threshold: 30
+  min_area_ratio: 0.01
+  blur: 5
+  confirm_frames: 3
+  cooldown_s: 12
+  analysis_width: 320
 
 clip:
   duration_s: 10
   preroll_s: 3
   buffer_fps: 5
-
-tracking:
-  iou_threshold: 0.30
-  max_lost_s: 2
-  min_hits: 1
 
 summary_interval_s: 60
 
@@ -30,9 +25,9 @@ telegram:
   bot_token: ""
   chat_id: ""
 
-# Hasta 10 cámaras. Usa el substream (cerca de 640x360), no el main stream.
+# Hasta 10 cámaras. En un DVR Dahua, subtype=0 es el flujo principal y subtype=1 el substream.
 cameras:
-  - id: cam01
-    url: rtsp://usuario:clave@192.168.1.101:554/stream2
-  # - id: cam02
-  #   url: rtsp://usuario:clave@192.168.1.102:554/stream2
+  - id: dvr_ch1
+    url: rtsp://usuario:clave@192.168.1.110:554/cam/realmonitor?channel=1&subtype=0
+  # - id: dvr_ch2
+  #   url: rtsp://usuario:clave@192.168.1.110:554/cam/realmonitor?channel=2&subtype=0

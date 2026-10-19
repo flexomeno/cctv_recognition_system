@@ -57,4 +57,5 @@ kctl -n cctv create secret generic cctv-config \
   --from-file=config.yaml="$config" \
   --dry-run=client -o yaml | kctl apply -f -
 kctl apply -k "$root/deploy/k8s"
+kctl -n cctv rollout restart deployment/cctv-monitor
 kctl -n cctv rollout status deployment/cctv-monitor --timeout=180s

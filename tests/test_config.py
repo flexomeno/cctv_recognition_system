@@ -19,8 +19,10 @@ class ConfigTest(unittest.TestCase):
     def test_example_loads_one_camera(self):
         config = load_config(EXAMPLE)
         self.assertEqual(len(config.cameras), 1)
-        self.assertEqual(config.cameras[0].id, "cam01")
-        self.assertEqual(config.inference.imgsz, 640)
+        self.assertEqual(config.cameras[0].id, "dvr_ch1")
+        self.assertEqual(config.motion.diff_threshold, 30)
+        self.assertAlmostEqual(config.motion.min_area_ratio, 0.01)
+        self.assertEqual(config.motion.confirm_frames, 3)
         self.assertEqual(config.clip.duration_s, 10)
         self.assertEqual(config.clip.preroll_s, 3)
         self.assertTrue(str(config.database).endswith("inventory.db"))

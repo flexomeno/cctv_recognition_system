@@ -17,6 +17,16 @@ class CameraConfig:
 
 
 @dataclass(frozen=True)
+class MotionConfig:
+    diff_threshold: int
+    min_area_ratio: float
+    blur: int
+    confirm_frames: int
+    cooldown_s: float
+    analysis_width: int
+
+
+@dataclass(frozen=True)
 class InferenceConfig:
     imgsz: int
     confidence: float
@@ -50,6 +60,7 @@ class AppConfig:
     database: Path
     model_path: Path
     model_url: str
+    motion: MotionConfig
     inference: InferenceConfig
     clip: ClipConfig
     tracking: TrackingConfig
@@ -105,15 +116,16 @@ def load_config(path: Path) -> AppConfig:
     if max_lost_s <= 0:
         raise ValueError("tracking.max_lost_s tiene que ser mayor que 0.")
 
-    model_url = raw.get("model_url")
-    if not isinstance(model_url, str) or not model_url.startswith("https://"):
+    model_url = raw.get("model_url") or ""
+    if model_url and (not isinstance(model_url, str) or not model_url.startswith("https://")):
         raise ValueError("model_url tiene que ser una URL https.")
 
     return AppConfig(
         output_dir=_resolve(base, _text(raw, "output_dir", "data")),
         database=_resolve(base, _text(raw, "database", "data/inventory.db")),
         model_path=_resolve(base, _text(raw, "model_path", "models/yolov8n.onnx")),
-        model_url=model_url,
+        model_url=model_url if isinstance(model_url, str) else "",
+        motion=_motion(raw),
         inference=InferenceConfig(
             imgsz=imgsz,
             confidence=confidence,
@@ -133,6 +145,36 @@ def load_config(path: Path) -> AppConfig:
         cameras=_cameras(raw.get("cameras")),
         summary_interval_s=_summary_interval(raw),
         telegram=_telegram(raw.get("telegram")),
+    )
+
+
+def _motion(raw: dict) -> MotionConfig:
+    motion = _section(raw, "motion")
+    diff_threshold = _int(motion, "diff_threshold", 30)
+    if not 1 <= diff_threshold <= 255:
+        raise ValueError("motion.diff_threshold tiene que estar entre 1 y 255.")
+    min_area_ratio = _float(motion, "min_area_ratio", 0.01)
+    if not 0 < min_area_ratio < 1:
+        raise ValueError("motion.min_area_ratio tiene que estar entre 0 y 1.")
+    blur = _int(motion, "blur", 5)
+    if blur != 0 and (blur < 3 or blur % 2 == 0):
+        raise ValueError("motion.blur tiene que ser 0 o un impar mayor o igual que 3.")
+    confirm_frames = _int(motion, "confirm_frames", 3)
+    if confirm_frames < 1:
+        raise ValueError("motion.confirm_frames tiene que ser al menos 1.")
+    cooldown_s = _float(motion, "cooldown_s", 12)
+    if cooldown_s < 0:
+        raise ValueError("motion.cooldown_s tiene que ser >= 0.")
+    analysis_width = _int(motion, "analysis_width", 320)
+    if analysis_width < 64:
+        raise ValueError("motion.analysis_width tiene que ser al menos 64.")
+    return MotionConfig(
+        diff_threshold=diff_threshold,
+        min_area_ratio=min_area_ratio,
+        blur=blur,
+        confirm_frames=confirm_frames,
+        cooldown_s=cooldown_s,
+        analysis_width=analysis_width,
     )
 
 

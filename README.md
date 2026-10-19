@@ -1,10 +1,8 @@
 # Monitor CCTV
 
-Lee hasta 10 cámaras RTSP, detecta personas y vehículos, cuenta cada visita una sola vez por cámara y graba un video de 10 segundos cuando la visita se confirma.
+Lee hasta 10 cámaras RTSP en el exterior y, cuando un bloque del cuadro se mueve, graba un video de 10 segundos y lo envía a Telegram. No clasifica personas, vehículos ni animales: el viento mueve puntos sueltos y eso no abre un clip; un animal, una persona o un vehículo dejan una mancha continua.
 
-Está pensado para un Intel Celeron J4005 con 8 GB de RAM, sin GPU dedicada. Usa el substream de la cámara (cerca de 640×360) y corre una sola inferencia a la vez.
-
-Una visita es un objeto seguido en la misma cámara. Si sale de cuadro más de unos segundos y vuelve a entrar, cuenta como otra visita. No reconoce la misma cara ni la misma placa entre visitas.
+Está pensado para un Intel Celeron J4005 con 8 GB de RAM, sin GPU dedicada. La comparación de frames es liviana y corre en cada imagen nueva.
 
 ## Requisitos
 
@@ -27,7 +25,7 @@ pip install -r requirements.txt
 cp config.example.yaml config.yaml
 ```
 
-Edita `config.yaml` con las URLs reales. Ese archivo no se versiona porque lleva usuario y clave. El primer arranque descarga YOLOv8n (pesos de Ultralytics, licencia AGPL-3.0) en `models/yolov8n.onnx` y lo ejecuta a 640 px.
+Edita `config.yaml` con las URLs reales. Ese archivo no se versiona porque lleva usuario y clave. La sensibilidad está en `motion`: bajar `diff_threshold` o `min_area_ratio` produce más videos, incluido el movimiento de hojas.
 
 ## Uso
 
@@ -35,11 +33,11 @@ Edita `config.yaml` con las URLs reales. Ese archivo no se versiona porque lleva
 python -m app --config config.yaml
 ```
 
-Ctrl+C detiene el monitor y cierra el clip que estuviera grabándose. Cada 60 segundos escribe en consola cuántas visitas van hoy por cámara y clase.
+Ctrl+C detiene el monitor y cierra el clip que estuviera grabándose. Cada 60 segundos escribe en consola cuántos videos van hoy por cámara.
 
 Los videos quedan en `data/clips/<cámara>/`. El inventario queda en `data/inventory.db`.
 
-Cuando un clip termina, se envía a Telegram si `config.yaml` tiene `telegram.bot_token` y `telegram.chat_id`. El mensaje lleva la cámara, las detecciones de esos 10 segundos y el video. Crea el bot con @BotFather, escríbele `/start` y el chat id sale de `https://api.telegram.org/bot<token>/getUpdates`.
+Cuando un clip termina, se envía a Telegram si `config.yaml` tiene `telegram.bot_token` y `telegram.chat_id`. El mensaje lleva la cámara y la hora. Crea el bot con @BotFather, escríbele `/start` y el chat id sale de `https://api.telegram.org/bot<token>/getUpdates`.
 
 ```bash
 python -m app.report --config config.yaml
@@ -60,7 +58,7 @@ sh deploy/install.sh
 sudo k3s kubectl -n cctv logs -f deployment/cctv-monitor
 ```
 
-El primer arranque descarga el modelo YOLO, así que el pod necesita salida a internet esa vez. Las cámaras están en `192.168.110.0/24`; el pod tiene que poder llegar a esa red. Si al reiniciar no hay imagen, revisa esa ruta. Para cambiar cámaras o el token de Telegram, vuelve a crear el Secret y reinicia el deployment:
+Las cámaras están en `192.168.110.0/24`; el pod tiene que poder llegar a esa red. Si al reiniciar no hay imagen, revisa esa ruta. Para cambiar la sensibilidad, las cámaras o el token de Telegram, vuelve a crear el Secret y reinicia el deployment:
 
 ```bash
 sudo k3s kubectl -n cctv create secret generic cctv-config \
@@ -68,16 +66,18 @@ sudo k3s kubectl -n cctv create secret generic cctv-config \
 sudo k3s kubectl -n cctv rollout restart deployment/cctv-monitor
 ```
 
-## Qué cuenta
+## Cámaras del NUC
 
-Clases: persona, bicicleta, auto, moto, bus y camión.
+El DVR Dahua `192.168.110.110` aporta cinco canales, `dvr_ch1` a `dvr_ch5`, por el flujo principal (`subtype=0`). Las URLs viven solo en `config.yaml`. Con movimiento, las cinco se revisan en cada frame nuevo. Decodificar cinco flujos en alta resolución es lo que más CPU usa; si el NUC se queda corto, el mismo canal en `subtype=1` baja la carga.
 
-Una visita se confirma en la primera detección. Si el mismo objeto se pierde menos de 2 segundos, sigue siendo la misma visita. Al cerrarse se guarda cámara, clase, inicio, fin, confianza y la ruta del clip.
+## Sensibilidad
 
-El clip dura 10 segundos: unos 3 segundos previos a la confirmación y el resto hasta completar los 10. Si en esa ventana entran más visitas de la misma cámara, comparten el clip.
+`motion.diff_threshold` (1–255) es cuánto tiene que cambiar un píxel. `motion.min_area_ratio` es la fracción del cuadro que tiene que ocupar un solo bloque. `motion.confirm_frames` es cuántos frames seguidos hace falta ver ese bloque. `motion.cooldown_s` espera entre un video y el siguiente de la misma cámara.
+
+El clip dura 10 segundos: unos 3 segundos previos al movimiento y el resto hasta completar los 10.
 
 ## Límites
 
-- Con 10 cámaras la detección va por turnos. Un cruce que no coincide con el turno de esa cámara puede no quedar en ningún frame.
-- Si la cámara se configura en main stream, el CPU se queda decodificando y deja de analizar a tiempo.
-- No hay reconocimiento facial ni lectura de placas.
+- Una ráfaga de viento sobre un árbol grande puede formar un bloque y abrir un clip. Sube `min_area_ratio` o `diff_threshold` si pasa seguido.
+- Un animal que cruza muy pegado al borde y ocupa menos del bloque mínimo no abre clip. Baja `min_area_ratio`.
+- Cinco flujos principales a la vez pueden llenar el núcleo asignado al pod. El substream deja margen.

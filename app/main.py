@@ -9,11 +9,10 @@ from pathlib import Path
 
 from app.capture import CameraStream
 from app.config import AppConfig, load_config
-from app.detector import Detector, ensure_model
 from app.inventory import Inventory, format_counts, start_of_local_day
+from app.motion import MotionGate
 from app.recorder import CameraRecorder, ClipWriter, prepare_codec
 from app.telegram import TelegramNotifier
-from app.tracker import CameraTracker
 
 log = logging.getLogger("cctv")
 
@@ -51,13 +50,6 @@ def handle_events(events, recorder: CameraRecorder, inventory: Inventory, camera
 
 def run(config: AppConfig) -> None:
     prepare_codec()
-    ensure_model(config.model_path, config.model_url)
-    detector = Detector(
-        config.model_path,
-        config.inference.imgsz,
-        config.inference.confidence,
-        config.inference.iou,
-    )
     inventory = Inventory(config.database)
     notifier = None
     if config.telegram is not None:
@@ -68,29 +60,28 @@ def run(config: AppConfig) -> None:
     writer = ClipWriter(on_saved=notifier.submit_clip if notifier is not None else None)
     recorders: dict[str, CameraRecorder] = {}
     streams: dict[str, CameraStream] = {}
-    trackers: dict[str, CameraTracker] = {}
+    gates: dict[str, MotionGate] = {}
     clips_dir = config.output_dir / "clips"
     for camera in config.cameras:
         recorder = CameraRecorder(camera.id, config.clip, clips_dir, writer)
         recorders[camera.id] = recorder
         stream = CameraStream(camera.id, camera.url, on_frame=recorder.observe)
         streams[camera.id] = stream
-        trackers[camera.id] = CameraTracker(config.tracking)
+        gates[camera.id] = MotionGate(config.motion)
         stream.start()
 
     log.info(
-        "Monitoreando %s cámara(s). Una inferencia a la vez, tope %.1f fps por cámara.",
+        "Monitoreando %s cámara(s) por movimiento. Umbral %s, bloque mínimo %.1f%%, %s frames.",
         len(config.cameras),
-        config.inference.fps_per_camera,
+        config.motion.diff_threshold,
+        config.motion.min_area_ratio * 100,
+        config.motion.confirm_frames,
     )
-    interval = 1.0 / config.inference.fps_per_camera
-    next_infer = {camera.id: 0.0 for camera in config.cameras}
     last_frame_ts = {camera.id: -1.0 for camera in config.cameras}
-    last_track_update = {camera.id: 0.0 for camera in config.cameras}
-    cursor = 0
+    next_clip = {camera.id: 0.0 for camera in config.cameras}
+    visit_ids = {camera.id: 0 for camera in config.cameras}
     last_summary = 0.0
-    last_infer_ms: float | None = None
-    total = len(config.cameras)
+    last_check_ms: float | None = None
     stop = False
 
     def request_stop(_signum, _frame) -> None:
@@ -104,58 +95,44 @@ def run(config: AppConfig) -> None:
         while not stop:
             now_mono = time.monotonic()
             now_wall = time.time()
+            checked = False
             for camera in config.cameras:
                 recorders[camera.id].flush_if_stale(now_mono)
-                _expire_if_offline(
-                    camera.id,
-                    streams[camera.id],
-                    trackers[camera.id],
-                    recorders[camera.id],
-                    inventory,
-                    last_track_update,
-                    now_mono,
-                    now_wall,
-                    config.tracking.max_lost_s,
-                )
-
-            ran = False
-            for offset in range(total):
-                camera = config.cameras[(cursor + offset) % total]
-                if now_mono < next_infer[camera.id]:
-                    continue
                 latest = streams[camera.id].latest()
                 if latest is None or latest[0] <= last_frame_ts[camera.id]:
                     continue
                 frame_ts, frame = latest
+                last_frame_ts[camera.id] = frame_ts
                 try:
                     started = time.perf_counter()
-                    detections = detector.detect(frame)
-                    last_infer_ms = (time.perf_counter() - started) * 1000
-                    events = trackers[camera.id].update(detections, time.time())
+                    fired, ratio = gates[camera.id].update(frame)
+                    last_check_ms = (time.perf_counter() - started) * 1000
                 except Exception:
-                    log.exception("Inferencia falló en %s", camera.id)
-                    next_infer[camera.id] = time.monotonic() + interval
-                    cursor = (cursor + offset + 1) % total
-                    ran = True
-                    break
-                last_frame_ts[camera.id] = frame_ts
-                last_track_update[camera.id] = time.time()
-                next_infer[camera.id] = time.monotonic() + interval
-                handle_events(
-                    events,
-                    recorders[camera.id],
-                    inventory,
-                    camera.id,
-                    frame_ts,
+                    log.exception("El análisis de movimiento falló en %s", camera.id)
+                    continue
+                checked = True
+                recorder = recorders[camera.id]
+                if not fired or recorder.active_path() is not None or now_mono < next_clip[camera.id]:
+                    continue
+                visit_ids[camera.id] += 1
+                clip_path = recorder.start(frame_ts)
+                recorder.note("movimiento")
+                inventory.add_visit(
+                    camera_id=camera.id,
+                    class_name="movimiento",
+                    track_id=visit_ids[camera.id],
+                    started_at=now_wall,
+                    ended_at=now_wall + config.clip.duration_s,
+                    confidence=ratio,
+                    clip_path=clip_path,
                 )
-                cursor = (cursor + offset + 1) % total
-                ran = True
-                break
+                next_clip[camera.id] = now_mono + config.motion.cooldown_s
+                log.info("%s movimiento, bloque %.1f%% del cuadro", camera.id, ratio * 100)
 
             if now_wall - last_summary >= config.summary_interval_s:
-                _log_summary(streams, inventory, last_infer_ms)
+                _log_summary(streams, inventory, last_check_ms)
                 last_summary = now_wall
-            if not ran:
+            if not checked:
                 time.sleep(0.02)
     finally:
         for stream in streams.values():
@@ -170,44 +147,22 @@ def run(config: AppConfig) -> None:
         log.info("Monitor detenido")
 
 
-def _expire_if_offline(
-    camera_id: str,
-    stream: CameraStream,
-    tracker: CameraTracker,
-    recorder: CameraRecorder,
-    inventory: Inventory,
-    last_track_update: dict[str, float],
-    now_mono: float,
-    now_wall: float,
-    max_lost_s: float,
-) -> None:
-    if not tracker.has_open_tracks():
-        return
-    age = stream.frame_age()
-    offline = age is None or age > max_lost_s
-    if not offline or now_wall - last_track_update[camera_id] < max_lost_s:
-        return
-    events = tracker.update([], now_wall)
-    last_track_update[camera_id] = now_wall
-    handle_events(events, recorder, inventory, camera_id, now_mono)
-
-
 def _log_summary(
     streams: dict[str, CameraStream],
     inventory: Inventory,
-    last_infer_ms: float | None,
+    last_check_ms: float | None,
 ) -> None:
     active = sum(1 for stream in streams.values() if stream.connected())
     lines = [f"Cámaras con imagen: {active}/{len(streams)}"]
-    if last_infer_ms is not None:
-        lines.append(f"Última inferencia: {last_infer_ms:.0f} ms")
-    lines.append("Visitas de hoy:")
+    if last_check_ms is not None:
+        lines.append(f"Último análisis: {last_check_ms:.0f} ms")
+    lines.append("Videos de hoy:")
     lines.append(format_counts(inventory.counts(since=start_of_local_day())))
     log.info("\n%s", "\n".join(lines))
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Monitor RTSP de personas y vehículos")
+    parser = argparse.ArgumentParser(description="Monitor RTSP por movimiento")
     parser.add_argument("--config", default="config.yaml", help="Ruta del YAML de cámaras")
     args = parser.parse_args(argv)
     logging.basicConfig(
