@@ -9,10 +9,11 @@ from app.config import MotionConfig
 
 
 class MotionGate:
-    """Compara tres frames y dispara solo si un bloque compacto cambió.
+    """Compara el frame actual con uno anterior y dispara si un bloque cambió.
 
-    El viento y la compresión mueven puntos sueltos. Un animal, una persona o
-    un vehículo dejan una mancha continua, y esa mancha es la que se mide.
+    A varios frames por segundo, un animal que camina casi no difiere del
+    frame inmediato. Se compara con un frame más viejo para que ese desplazamiento
+    se vea. El viento sigue siendo puntos sueltos; cuenta el bloque más grande.
     """
 
     def __init__(self, motion: MotionConfig):
@@ -21,21 +22,15 @@ class MotionGate:
         self._blur = motion.blur
         self._confirm_frames = motion.confirm_frames
         self._width = motion.analysis_width
-        self._frames: deque[np.ndarray] = deque(maxlen=3)
+        self._frames: deque[np.ndarray] = deque(maxlen=motion.frame_gap + 1)
         self._streak = 0
 
     def update(self, frame: np.ndarray) -> tuple[bool, float]:
         self._frames.append(_prepare(frame, self._width, self._blur))
-        if len(self._frames) < 3:
+        if len(self._frames) <= self._frames.maxlen - 1:
             return False, 0.0
-        older, previous, current = self._frames
-        changed = cv2.absdiff(current, older)
-        changed_recent = cv2.absdiff(current, previous)
-        mask = np.where(
-            (changed > self._diff_threshold) & (changed_recent > self._diff_threshold),
-            np.uint8(255),
-            np.uint8(0),
-        )
+        changed = cv2.absdiff(self._frames[-1], self._frames[0])
+        mask = np.where(changed > self._diff_threshold, np.uint8(255), np.uint8(0))
         ratio = _largest_blob_ratio(mask)
         if ratio >= self._min_area_ratio:
             self._streak += 1

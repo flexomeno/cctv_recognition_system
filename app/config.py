@@ -22,6 +22,7 @@ class MotionConfig:
     min_area_ratio: float
     blur: int
     confirm_frames: int
+    frame_gap: int
     cooldown_s: float
     analysis_width: int
 
@@ -150,18 +151,21 @@ def load_config(path: Path) -> AppConfig:
 
 def _motion(raw: dict) -> MotionConfig:
     motion = _section(raw, "motion")
-    diff_threshold = _int(motion, "diff_threshold", 30)
+    diff_threshold = _int(motion, "diff_threshold", 18)
     if not 1 <= diff_threshold <= 255:
         raise ValueError("motion.diff_threshold tiene que estar entre 1 y 255.")
-    min_area_ratio = _float(motion, "min_area_ratio", 0.01)
+    min_area_ratio = _float(motion, "min_area_ratio", 0.004)
     if not 0 < min_area_ratio < 1:
         raise ValueError("motion.min_area_ratio tiene que estar entre 0 y 1.")
-    blur = _int(motion, "blur", 5)
+    blur = _int(motion, "blur", 3)
     if blur != 0 and (blur < 3 or blur % 2 == 0):
         raise ValueError("motion.blur tiene que ser 0 o un impar mayor o igual que 3.")
-    confirm_frames = _int(motion, "confirm_frames", 3)
+    confirm_frames = _int(motion, "confirm_frames", 2)
     if confirm_frames < 1:
         raise ValueError("motion.confirm_frames tiene que ser al menos 1.")
+    frame_gap = _int(motion, "frame_gap", 4)
+    if not 1 <= frame_gap <= 30:
+        raise ValueError("motion.frame_gap tiene que estar entre 1 y 30.")
     cooldown_s = _float(motion, "cooldown_s", 12)
     if cooldown_s < 0:
         raise ValueError("motion.cooldown_s tiene que ser >= 0.")
@@ -173,6 +177,7 @@ def _motion(raw: dict) -> MotionConfig:
         min_area_ratio=min_area_ratio,
         blur=blur,
         confirm_frames=confirm_frames,
+        frame_gap=frame_gap,
         cooldown_s=cooldown_s,
         analysis_width=analysis_width,
     )

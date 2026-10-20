@@ -1,4 +1,6 @@
 #!/bin/sh
+# El NUC ya no corre este monitor. La vigilancia actual es Kerberos;
+# ver "Por qué Kerberos" en el README. Este script queda como referencia.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)

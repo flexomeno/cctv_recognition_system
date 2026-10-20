@@ -12,6 +12,7 @@ def gate(**overrides):
         min_area_ratio=0.02,
         blur=0,
         confirm_frames=2,
+        frame_gap=1,
         cooldown_s=12,
         analysis_width=80,
     )
@@ -58,10 +59,18 @@ class MotionTest(unittest.TestCase):
         detector = gate(confirm_frames=1)
         still = with_block(20)
         detector.update(blank())
-        detector.update(still)
+        self.assertTrue(detector.update(still)[0])
         fired, ratio = detector.update(still)
         self.assertFalse(fired)
         self.assertLess(ratio, 0.02)
+
+    def test_a_slow_shift_shows_up_across_the_gap(self):
+        detector = gate(frame_gap=3, confirm_frames=1, min_area_ratio=0.02)
+        for _ in range(3):
+            self.assertFalse(detector.update(with_block(5))[0])
+        fired, ratio = detector.update(with_block(40))
+        self.assertTrue(fired)
+        self.assertGreater(ratio, 0.02)
 
 
 if __name__ == "__main__":

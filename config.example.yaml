@@ -6,10 +6,11 @@ database: data/inventory.db
 # Exterior: el viento mueve puntos sueltos. El clip sale cuando un bloque compacto
 # cambia durante varios frames. Bajar diff_threshold o min_area_ratio lo hace más sensible.
 motion:
-  diff_threshold: 30
-  min_area_ratio: 0.01
-  blur: 5
-  confirm_frames: 3
+  diff_threshold: 18
+  min_area_ratio: 0.004
+  blur: 3
+  confirm_frames: 2
+  frame_gap: 4
   cooldown_s: 12
   analysis_width: 320
 

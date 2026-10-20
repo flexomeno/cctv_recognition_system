@@ -71,13 +71,15 @@ def run(config: AppConfig) -> None:
         stream.start()
 
     log.info(
-        "Monitoreando %s cámara(s) por movimiento. Umbral %s, bloque mínimo %.1f%%, %s frames.",
+        "Monitoreando %s cámara(s) por movimiento. Umbral %s, bloque mínimo %.2f%%, salto %s frames.",
         len(config.cameras),
         config.motion.diff_threshold,
         config.motion.min_area_ratio * 100,
-        config.motion.confirm_frames,
+        config.motion.frame_gap,
     )
     last_frame_ts = {camera.id: -1.0 for camera in config.cameras}
+    analyzed = {camera.id: 0 for camera in config.cameras}
+    window_started = time.monotonic()
     next_clip = {camera.id: 0.0 for camera in config.cameras}
     visit_ids = {camera.id: 0 for camera in config.cameras}
     last_summary = 0.0
@@ -103,6 +105,7 @@ def run(config: AppConfig) -> None:
                     continue
                 frame_ts, frame = latest
                 last_frame_ts[camera.id] = frame_ts
+                analyzed[camera.id] += 1
                 try:
                     started = time.perf_counter()
                     fired, ratio = gates[camera.id].update(frame)
@@ -130,7 +133,10 @@ def run(config: AppConfig) -> None:
                 log.info("%s movimiento, bloque %.1f%% del cuadro", camera.id, ratio * 100)
 
             if now_wall - last_summary >= config.summary_interval_s:
-                _log_summary(streams, inventory, last_check_ms)
+                elapsed = max(time.monotonic() - window_started, 0.001)
+                _log_summary(streams, inventory, last_check_ms, analyzed, elapsed)
+                analyzed = {camera.id: 0 for camera in config.cameras}
+                window_started = time.monotonic()
                 last_summary = now_wall
             if not checked:
                 time.sleep(0.02)
@@ -151,9 +157,12 @@ def _log_summary(
     streams: dict[str, CameraStream],
     inventory: Inventory,
     last_check_ms: float | None,
+    analyzed: dict[str, int],
+    elapsed: float,
 ) -> None:
     active = sum(1 for stream in streams.values() if stream.connected())
-    lines = [f"Cámaras con imagen: {active}/{len(streams)}"]
+    rates = ", ".join(f"{camera_id} {count / elapsed:.1f}/s" for camera_id, count in analyzed.items())
+    lines = [f"Cámaras con imagen: {active}/{len(streams)}", f"Análisis: {rates}"]
     if last_check_ms is not None:
         lines.append(f"Último análisis: {last_check_ms:.0f} ms")
     lines.append("Videos de hoy:")
