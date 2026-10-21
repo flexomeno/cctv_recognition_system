@@ -18,7 +18,6 @@ CHAT = os.environ["TELEGRAM_CHAT_ID"]
 ROOT = Path("/recordings")
 STATE = Path("/sent/sent.json")
 MAX_BYTES = 45 * 1024 * 1024
-MAX_AGE_S = 10 * 60
 LOCAL = timezone(timedelta(hours=-5))
 
 
@@ -139,18 +138,12 @@ def main():
             if ROOT.exists()
             else []
         )
-        for path in sorted(files, key=clip_time, reverse=True):
+        for path in sorted(files, key=clip_time):
             try:
                 key = str(path.relative_to(ROOT)) + ":" + str(path.stat().st_size)
-                age = time.time() - clip_time(path)
             except (FileNotFoundError, ValueError):
                 continue
             if key in sent:
-                continue
-            if age > MAX_AGE_S:
-                sent.add(key)
-                save(sent)
-                print("omitido tarde " + camera_of(path) + " " + path.name, flush=True)
                 continue
             if not stable(path):
                 continue

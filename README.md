@@ -33,10 +33,12 @@ En el NUC, con Docker, no dentro de k3s. El plugin `docker compose` no está ins
 ```text
 /home/agente/kerberos/
   up.sh
+  panel.py               copia de deploy/kerberos/panel.py
   sender.py              copia de deploy/kerberos/sender.py
   telegram.env           token y chat id, no se versiona
-  sent/sent.json         mp4 que ya se mandaron o se descartaron
+  sent/sent.json         mp4 que ya se mandaron
   dvr_ch1/agent.env      un archivo por canal, no se versiona
+  dvr_ch1/config/        umbral, zona y duraciones; no se versiona
   dvr_ch1/recordings/
   dvr_ch2/ ...
 ```
@@ -48,9 +50,11 @@ cd /home/agente/kerberos
 sh up.sh
 ```
 
-Eso crea seis contenedores. Cinco se llaman `kerberos-dvr-ch1` … `kerberos-dvr-ch5`. Cada uno publica su puerto 80 en 8091–8095, lee su `agent.env` y monta `dvr_chN/recordings` en `/home/agent/data/recordings`. El sexto es `kerberos-telegram`.
+Eso crea siete contenedores, todos con `--restart unless-stopped`. Docker arranca con el NUC, así que lo que estaba encendido vuelve solo. Un canal apagado sigue apagado.
 
-Cambiar `agent.env` no entra con `docker restart`: las variables quedan fijadas al crear el contenedor. Hay que volver a crearlo, que es lo que hace `up.sh`. `up.sh` también reinicia el reenvío.
+Cinco se llaman `kerberos-dvr-ch1` … `kerberos-dvr-ch5`. Cada uno publica su puerto 80 en 8091–8095, lee su `agent.env` y monta dos carpetas: `recordings` en `/home/agent/data/recordings` y `config` en `/home/agent/data/config`. El umbral, la zona, la duración y el interruptor de movimiento viven en `config/config.json`. Por eso **Save** en el tablero de Kerberos sí se queda, también después de un reinicio. La URL, el modo offline, la zona horaria y la clave del tablero siguen en `agent.env`. Esas sí exigen volver a crear el contenedor: `docker restart` no relee ese archivo.
+
+El sexto contenedor es `kerberos-telegram`. El séptimo es `kerberos-panel`, en http://192.168.110.144:8090. Ahí se enciende o se apaga cada canal, hay un enlace a su tablero, y el usuario y la clave están en campos ocultos con un ojo para mostrarlos. Apagar un canal hace `docker stop`. No decodifica ni manda videos hasta que se enciende de nuevo.
 
 ## Cómo se articula con sender.py
 
@@ -66,11 +70,11 @@ sent/               ->  /sent
 
 El contenedor ejecuta `python -u /sender.py`. El script recorre `/recordings`, espera a que el mp4 deje de crecer y llama a `sendVideo` con el bot de `telegram.env`. El nombre de la carpeta (`dvr_ch1`, `dvr_ch2`, …) es el de la cámara en el mensaje.
 
-La descripción lleva la cámara, la hora de toma en UTC−5 y los píxeles que abrieron el clip. Esos píxeles son el penúltimo número del archivo, el que Kerberos comparó con `AGENT_CAPTURE_PIXEL_CHANGE`. En `…_335_15894.mp4`, 335 son los píxeles y 15894 es la duración en milisegundos.
+La descripción lleva la cámara, la hora de toma en UTC−5 y los píxeles que abrieron el clip. Esos píxeles son el penúltimo número del archivo. En `…_335_15894.mp4`, 335 son los píxeles y 15894 es la duración en milisegundos.
 
-Manda primero el clip más nuevo. Si el archivo tiene más de 10 minutos, no lo sube: lo anota en `sent/sent.json` para no repetirlo. Un `docker restart kerberos-telegram` alcanza para cargar un `sender.py` nuevo, porque el script está montado y no va horneado en la imagen.
+Manda primero el clip más antiguo que todavía no se haya enviado. No descarta los atrasados: mientras se calibra el umbral, la cola se vacía en orden. Un `docker restart kerberos-telegram` alcanza para cargar un `sender.py` nuevo, porque el script está montado y no va horneado en la imagen.
 
-`AGENT_CAPTURE_PIXEL_CHANGE` es la sensibilidad. Un número más bajo produce más videos, también con viento. Kerberos compara keyframes, no cada frame: en estos substreams hay cerca de uno por segundo.
+El umbral se cambia en el tablero del canal, en **Recording threshold**, y se guarda con **Save**. Un número más bajo produce más videos, también con viento. Kerberos compara keyframes, no cada frame: en estos substreams hay cerca de uno por segundo. La zona se dibuja en ese mismo tablero. Sin una zona, Kerberos no detecta movimiento; la que está guardada ahora es el cuadro completo.
 
 ## Detector en Python
 

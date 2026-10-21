@@ -4,6 +4,7 @@ __pycache__/
 config.yaml
 deploy/kerberos/telegram.env
 deploy/kerberos/dvr_ch*/agent.env
+deploy/kerberos/dvr_ch*/config/
 data/
 models/*.onnx
 models/*.part
