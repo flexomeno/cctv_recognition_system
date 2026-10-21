@@ -3,7 +3,7 @@
 # Las claves viven en dvr_chN/agent.env y telegram.env, fuera de git.
 set -eu
 cd "$(dirname "$0")"
-for camera_id in dvr_ch1 dvr_ch2 dvr_ch3 dvr_ch4 dvr_ch5; do
+for camera_id in dvr_ch1 dvr_ch2 dvr_ch3 dvr_ch4 dvr_ch5 dvr_ch6; do
   if [ ! -f "$PWD/$camera_id/config/config.json" ]; then
     echo "Falta $PWD/$camera_id/config/config.json" >&2
     exit 1
@@ -37,6 +37,7 @@ start_agent dvr_ch2 8092 0.25 256m
 start_agent dvr_ch3 8093 0.25 256m
 start_agent dvr_ch4 8094 0.60 384m
 start_agent dvr_ch5 8095 0.25 256m
+start_agent dvr_ch6 8096 0.25 256m
 
 docker rm -f kerberos-telegram >/dev/null 2>&1 || true
 docker run -d \
@@ -49,6 +50,7 @@ docker run -d \
   -v "$PWD/dvr_ch3/recordings:/recordings/dvr_ch3:ro" \
   -v "$PWD/dvr_ch4/recordings:/recordings/dvr_ch4:ro" \
   -v "$PWD/dvr_ch5/recordings:/recordings/dvr_ch5:ro" \
+  -v "$PWD/dvr_ch6/recordings:/recordings/dvr_ch6:ro" \
   -v "$PWD/sent:/sent" \
   -v "$PWD/sender.py:/sender.py:ro" \
   --memory 128m \

@@ -20,6 +20,7 @@ CHANNELS = (
     ("dvr_ch3", "kerberos-dvr-ch3", 8093),
     ("dvr_ch4", "kerberos-dvr-ch4", 8094),
     ("dvr_ch5", "kerberos-dvr-ch5", 8095),
+    ("dvr_ch6", "kerberos-dvr-ch6", 8096),
 )
 BY_ID = {camera_id: (name, port) for camera_id, name, port in CHANNELS}
 

@@ -8,11 +8,11 @@ El primer monitor era este repositorio: Python, comparación de frames y un pod 
 
 El equipo es un Celeron J4005, dos núcleos, 8 GB, sin GPU. El pod tenía un tope de 1 CPU para no quitarle recursos a Grafana, InfluxDB, Mosquitto y Telegraf. Con los cinco canales del DVR en alta (`subtype=0`), decodificar llenaba ese núcleo. El programa pedía 8 fps y analizaba cerca de 1,2 fps por cámara. Un cruce de menos de un segundo caía entre dos frames. Bajar el umbral y comparar contra un frame anterior (`frame_gap`) hizo el detector más sensible, y el ritmo no subió: el límite era la decodificación, no el tamaño del bloque.
 
-Kerberos Agent ya hace esa vigilancia. Un proceso por cámara, RTSP en H.264 o H.265, clip con unos segundos antes y después del movimiento, y un umbral de píxeles cambiados. En el NUC, los cinco agentes juntos usan alrededor del 8% de CPU porque miran el substream y solo comparan keyframes.
+Kerberos Agent ya hace esa vigilancia. Un proceso por cámara, RTSP en H.264 o H.265, clip con unos segundos antes y después del movimiento, y un umbral de píxeles cambiados. En el NUC, los agentes juntos usan poco CPU porque miran el substream y solo comparan keyframes.
 
 Elegimos la versión libre, `kerberos/agent`, con `AGENT_OFFLINE=true`. Kerberos Hub sí envía Telegram, pero es el servicio de pago: el agente sube la grabación a la nube y Hub manda el aviso. El agente libre no tiene canal de Telegram. El video lo manda `deploy/kerberos/sender.py`, un contenedor que mira los mp4 ya cerrados y llama al mismo bot. Nada de eso abre un puerto hacia internet; la interfaz queda en la LAN.
 
-El agente configura un solo RTSP. Por eso hay un contenedor por canal, no uno con los cinco streams. Los puertos 8091–8095 evitan el 80, que puede usar el balanceador de k3s.
+El agente configura un solo RTSP. Por eso hay un contenedor por canal, no uno con los seis streams. Los puertos 8091–8096 evitan el 80, que puede usar el balanceador de k3s.
 
 | Canal | Interfaz | Flujo |
 | --- | --- | --- |
@@ -21,8 +21,9 @@ El agente configura un solo RTSP. Por eso hay un contenedor por canal, no uno co
 | dvr_ch3 | http://192.168.110.144:8093 | substream, H.264 640×360 |
 | dvr_ch4 | http://192.168.110.144:8094 | main, H.264 1920×1080 |
 | dvr_ch5 | http://192.168.110.144:8095 | substream, H.264 640×480 |
+| dvr_ch6 | http://192.168.110.144:8096 | substream, H.264 640×480 |
 
-El canal 4 quedó en el flujo alto porque su substream no contestó: cuatro intentos seguidos terminaron por tiempo de espera. El resto usa `subtype=1`. La región es el cuadro completo, el clip dura como máximo 15 segundos (5 antes y 8 después) y cada agente borra grabaciones al pasar de 400 MB. La zona horaria es `America/Bogota`. El umbral es 150 píxeles en el canal 1 y 300 en los canales 2 a 5. Las URLs, el token del bot y la clave de la interfaz están solo en el NUC, en `/home/agente/kerberos/`.
+El canal 4 quedó en el flujo alto porque su substream no contestó: cuatro intentos seguidos terminaron por tiempo de espera. El resto, incluido el canal 6, usa `subtype=1`. La región es el cuadro completo, el clip dura como máximo 15 segundos (5 antes y 8 después) y cada agente borra grabaciones al pasar de 400 MB. La zona horaria es `America/Bogota`. El umbral es 150 píxeles en el canal 1 y 300 en los canales 2 a 6. Las URLs, el token del bot y la clave de la interfaz están solo en el NUC, en `/home/agente/kerberos/`.
 
 El namespace `cctv` se eliminó del NUC para que el pod no siguiera decodificando los mismos canales. `energy-monitoring` no se tocó. Los manifiestos de `deploy/k8s` siguen en el repo como referencia; `deploy/install.sh` ya no es el camino de despliegue.
 
@@ -40,7 +41,7 @@ En el NUC, con Docker, no dentro de k3s. El plugin `docker compose` no está ins
   dvr_ch1/agent.env      un archivo por canal, no se versiona
   dvr_ch1/config/        umbral, zona y duraciones; no se versiona
   dvr_ch1/recordings/
-  dvr_ch2/ ...
+  dvr_ch2/ ... dvr_ch6/
 ```
 
 `agent.env` sale de `deploy/kerberos/agent.env.example`. `telegram.env` sale de `deploy/kerberos/telegram.env.example`. Para repetir el arranque, con esos archivos ya creados:
@@ -50,20 +51,23 @@ cd /home/agente/kerberos
 sh up.sh
 ```
 
-Eso crea siete contenedores, todos con `--restart unless-stopped`. Docker arranca con el NUC, así que lo que estaba encendido vuelve solo. Un canal apagado sigue apagado.
+Eso crea ocho contenedores, todos con `--restart unless-stopped`. Docker arranca con el NUC, así que lo que estaba encendido vuelve solo. Un canal apagado sigue apagado.
 
-Cinco se llaman `kerberos-dvr-ch1` … `kerberos-dvr-ch5`. Cada uno publica su puerto 80 en 8091–8095, lee su `agent.env` y monta dos carpetas: `recordings` en `/home/agent/data/recordings` y `config` en `/home/agent/data/config`. El umbral, la zona, la duración y el interruptor de movimiento viven en `config/config.json`. Por eso **Save** en el tablero de Kerberos sí se queda, también después de un reinicio. La URL, el modo offline, la zona horaria y la clave del tablero siguen en `agent.env`. Esas sí exigen volver a crear el contenedor: `docker restart` no relee ese archivo.
+Seis se llaman `kerberos-dvr-ch1` … `kerberos-dvr-ch6`. Cada uno publica su puerto 80 en 8091–8096, lee su `agent.env` y monta dos carpetas: `recordings` en `/home/agent/data/recordings` y `config` en `/home/agent/data/config`. El umbral, la zona, la duración y el interruptor de movimiento viven en `config/config.json`. Por eso **Save** en el tablero de Kerberos sí se queda, también después de un reinicio. La URL, el modo offline, la zona horaria y la clave del tablero siguen en `agent.env`. Esas sí exigen volver a crear el contenedor: `docker restart` no relee ese archivo.
 
-El sexto contenedor es `kerberos-telegram`. El séptimo es `kerberos-panel`, en http://192.168.110.144:8090. Ahí se enciende o se apaga cada canal, hay un enlace a su tablero, y el usuario y la clave están en campos ocultos con un ojo para mostrarlos. Apagar un canal hace `docker stop`. No decodifica ni manda videos hasta que se enciende de nuevo.
+El canal 6 se agregó sobre el mismo DVR (`channel=6`, substream). Su umbral inicial es 300 y queda en `dvr_ch6/config/config.json`, no en `agent.env`, para que el tablero pueda cambiarlo. El contenedor `kerberos-telegram` monta también `dvr_ch6/recordings`, y el panel lo lista en el puerto 8096.
+
+`kerberos-telegram` reenvía los mp4. `kerberos-panel`, en http://192.168.110.144:8090, enciende o apaga cada canal, tiene un enlace a su tablero, y el usuario y la clave están en campos ocultos con un ojo para mostrarlos. Apagar un canal hace `docker stop`. No decodifica ni manda videos hasta que se enciende de nuevo.
 
 ## Cómo se articula con sender.py
 
-Kerberos no llama a Telegram. Cuando cierra un mp4 lo deja en la carpeta de grabaciones de ese canal. `up.sh` monta las cinco carpetas, solo lectura, dentro de `kerberos-telegram`:
+Kerberos no llama a Telegram. Cuando cierra un mp4 lo deja en la carpeta de grabaciones de ese canal. `up.sh` monta las seis carpetas, solo lectura, dentro de `kerberos-telegram`:
 
 ```text
 dvr_ch1/recordings  ->  /recordings/dvr_ch1
 dvr_ch2/recordings  ->  /recordings/dvr_ch2
 ...
+dvr_ch6/recordings  ->  /recordings/dvr_ch6
 sender.py           ->  /sender.py
 sent/               ->  /sent
 ```
