@@ -8,6 +8,7 @@ import json
 import os
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -17,6 +18,8 @@ CHAT = os.environ["TELEGRAM_CHAT_ID"]
 ROOT = Path("/recordings")
 STATE = Path("/sent/sent.json")
 MAX_BYTES = 45 * 1024 * 1024
+MAX_AGE_S = 10 * 60
+LOCAL = timezone(timedelta(hours=-5))
 
 
 def load():
@@ -33,6 +36,27 @@ def save(sent):
     tmp = STATE.with_suffix(".tmp")
     tmp.write_text(json.dumps(sorted(sent)))
     tmp.replace(STATE)
+
+
+def clip_time(path: Path) -> float:
+    try:
+        return float(path.name.split("_", 1)[0])
+    except ValueError:
+        return path.stat().st_mtime
+
+
+def clip_clock(path: Path) -> str:
+    return datetime.fromtimestamp(clip_time(path), LOCAL).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def changed_pixels(path: Path) -> int | None:
+    parts = path.stem.split("_")
+    if len(parts) < 2:
+        return None
+    try:
+        return int(parts[-2])
+    except ValueError:
+        return None
 
 
 def camera_of(path: Path) -> str:
@@ -61,7 +85,10 @@ def stable(path: Path) -> bool:
 def send(path: Path) -> None:
     data = path.read_bytes()
     boundary = uuid.uuid4().hex
-    caption = camera_of(path) + "\nkerberos\n" + path.name
+    pixels = changed_pixels(path)
+    caption = camera_of(path) + "\n" + clip_clock(path) + "\nkerberos"
+    if pixels is not None:
+        caption += "\n" + str(pixels) + " píxeles cambiados"
     chunks = []
 
     def field(name, value):
@@ -112,12 +139,20 @@ def main():
             if ROOT.exists()
             else []
         )
-        for path in sorted(files, key=lambda item: item.stat().st_mtime):
+        for path in sorted(files, key=clip_time, reverse=True):
             try:
                 key = str(path.relative_to(ROOT)) + ":" + str(path.stat().st_size)
+                age = time.time() - clip_time(path)
             except (FileNotFoundError, ValueError):
                 continue
-            if key in sent or not stable(path):
+            if key in sent:
+                continue
+            if age > MAX_AGE_S:
+                sent.add(key)
+                save(sent)
+                print("omitido tarde " + camera_of(path) + " " + path.name, flush=True)
+                continue
+            if not stable(path):
                 continue
             if path.stat().st_size > MAX_BYTES:
                 print("omitido grande " + path.name, flush=True)
@@ -131,7 +166,9 @@ def main():
                 continue
             sent.add(key)
             save(sent)
-            print("enviado " + camera_of(path) + " " + path.name, flush=True)
+            pixels = changed_pixels(path)
+            detail = "" if pixels is None else " " + str(pixels) + " px"
+            print("enviado " + camera_of(path) + detail + " " + path.name, flush=True)
         time.sleep(3)
 
 
